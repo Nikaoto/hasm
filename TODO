@@ -1,0 +1,9 @@
+TODO #3
+Count current character in current line
+
+TODO #4
+Use hashmap for symbol_pairs, comp_codes, jump_codes, and dest_codes.
+Make sure to pre-hash the string values and store items at respective indexes.
+
+TODO #5
+Free memory on fatal errors before exiting.
