@@ -47,6 +47,9 @@ local line_cache = {}
 local pass_count = 0
 local fail_count = 0
 
+-- Maximum length of x and y when printing "Expected x, got y" on failure
+local str_max_log_len = 200
+
 local function truncate_line(line, max)
    max = max or 110
    if #line > max then
@@ -184,7 +187,8 @@ lest.expect = function(value)
             else
                message = string.format(
                   "Expected %q, got %q",
-                  tostring(expected_value), tostring(value))
+                  truncate_line(tostring(expected_value), str_max_log_len),
+                  truncate_line(tostring(value), str_max_log_len))
             end
 
             print_fail_reason(message)
