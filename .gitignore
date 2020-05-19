@@ -1,2 +1,4 @@
 hasm_g
 hasm
+*.hack
+!*.cmp.hack
