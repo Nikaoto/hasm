@@ -7,6 +7,7 @@
 
 #define READ_BUF_SIZE 256
 
+// Completely read file, all at once
 char* load_file(char* file_path, size_t* size)
 {
     char buf[READ_BUF_SIZE];
@@ -53,4 +54,25 @@ char* load_file(char* file_path, size_t* size)
     file_string[file_size] = '\0';
 
     return file_string;
+}
+
+// Completely write file, all at once
+int write_file(char *buf, char *path, size_t size)
+{
+    FILE *fp = fopen(path, "wb");
+    if (!fp) {
+        printf("Couldn't open file '%s' for writing\n", path);
+        return 1;
+    }
+
+    fwrite(buf, 1, size, fp);
+
+    int err = ferror(fp);
+    if (err) {
+        printf("I/O error %i when writing to file '%s'\n", err, path);
+        return 1;
+    }
+
+    fclose(fp);
+    return 0;
 }
