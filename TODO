@@ -1,9 +1,10 @@
-TODO #3
-Count current character in current line
-
-TODO #4
-Use hashmap for symbol_pairs, comp_codes, jump_codes, and dest_codes.
+TODO
+- better logging for tests
+- symbol support
+- Count current character in current line (for better error messages)
+- Use hashmap for symbol_pairs, comp_codes, jump_codes, and dest_codes.
 Make sure to pre-hash the string values and store items at respective indexes.
-
-TODO #5
-Free memory on fatal errors before exiting.
+- Free memory on fatal errors before exiting.
+- Move string functions into separate file
+- Make parse_arguments more general to handle declarative argument assignment (and
+add options for logging)

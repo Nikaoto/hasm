@@ -14,14 +14,16 @@
 #include <ctype.h>
 #include "file.h"
 
-#define MIN_ARGC                  2
-#define MAX_ARGC                  4
-#define ERR_TEXT_SIZE             200
-#define FILE_PATH_SIZE            200
-#define SYMBOL_TABLE_INITIAL_SIZE 100
-#define MAX_COMP_TOKEN_COUNT      3
-#define LOG_PARSER_OUTPUT         0
-#define LOG_GENERATOR_OUTPUT      1
+#define MIN_ARGC                         2
+#define MAX_ARGC                         4
+#define ERR_TEXT_SIZE                    200
+#define FILE_PATH_SIZE                   200
+#define SYMBOL_TABLE_INITIAL_SIZE        100
+#define MAX_COMP_TOKEN_COUNT             3
+#define LOG_PARSER_OUTPUT                0
+#define LOG_GENERATOR_OUTPUT             1
+#define INST_ARRAY_STARTING_CAPACITY     1024
+#define INST_ARRAY_CAPACITY_GROWTH_RATE  1024
 
 // Blankspace is ' ' or '\t'
 inline int is_blank(char c)
@@ -177,7 +179,6 @@ inline size_t find_next_any_index(char *str, size_t i, char *c)
     return find_next_any(str + i, c) - str;
 }
 
-
 // Find first char 'c' between 'start' and 'end' (both inclusive)
 // and return pointer to it.
 // Return NULL if not found
@@ -241,6 +242,17 @@ int str_replace_last(char *str, char *sub, char *rep)
         str[index++] = *rep++;
 
     return 0;
+}
+
+// Copy from 'src' to 'dest' up to (and excluding) the null terminator
+// Returns number of chars copied
+size_t copy_str_no_nullterm(char *dest, char *src)
+{
+    char *dest_start = dest;
+    while (*src) {
+        *dest++ = *src++;
+    }
+    return dest - dest_start;
 }
 
 // Sets input_file, output_file, and error_text
@@ -496,6 +508,16 @@ typedef struct {
     enum JUMP jump;
 } C_Instruction;
 
+void free_instruction(Instruction *i)
+{
+    if (i->type == A_INST) {
+        A_Instruction* a = (A_Instruction*) i->inst;
+        if (a->symbol)
+            free(a->symbol);
+    }
+    free(i->inst);
+}
+
 // Returns a^b
 // 'b' must be a positive
 int power(int a, int b)
@@ -589,7 +611,7 @@ char *parse_next_symbol(char *buf, char *end)
 A_Instruction *parse_a_instruction(char *buf, char *end)
 {
     A_Instruction tmp = {
-        .symbol = "",
+        .symbol = NULL,
         .value = 0,
     };
 
@@ -701,7 +723,7 @@ enum COMP parse_c_comp(char *buf, char *end)
             return comp_codes[j].code;
         }
     }
-    
+
     return COMP_NULL;
 }
 
@@ -801,13 +823,13 @@ int log_c_inst(C_Instruction *inst)
         "\t.dest = %s (0x%X)\n"
         "\t.comp = %s (0x%X)\n"
         "\t.jump = %s (0x%X)\n}\n",
-        (inst->dest >= DEST_PARSE_ERROR) ? 
+        (inst->dest >= DEST_PARSE_ERROR) ?
             "DEST_PARSE_ERROR" : dest_codes[inst->dest].str,
         inst->dest,
         (inst->comp >= COMP_PARSE_ERROR) ?
             "COMP_PARSE_ERROR" : comp_codes[inst->comp].str,
         inst->comp,
-        (inst->jump >= JUMP_PARSE_ERROR) ? 
+        (inst->jump >= JUMP_PARSE_ERROR) ?
             "JUMP_PARSE_ERROR" : jump_codes[inst->jump].str,
         inst->jump);
 }
@@ -826,13 +848,12 @@ int log_inst(Instruction *inst)
 
 int main(int argc, char* argv[])
 {
-
-    char input_file[FILE_PATH_SIZE];
-    char output_file[FILE_PATH_SIZE];
+    char input_file_path[FILE_PATH_SIZE];
+    char output_file_path[FILE_PATH_SIZE];
     char error_text[ERR_TEXT_SIZE];
 
     // Parse arguments
-    int err = parse_arguments(argc, argv, input_file, output_file,
+    int err = parse_arguments(argc, argv, input_file_path, output_file_path,
         error_text);
     if (err == 1) {
         printf("%s\n", error_text);
@@ -841,15 +862,16 @@ int main(int argc, char* argv[])
 
     // Completely read file into a buffer
     size_t input_file_size;
-    char *input_buf = load_file(input_file, &input_file_size);
-    //char *output_buf = malloc(input_file_size); // pre-allocate output buffer
+    char *input_buf = load_file(input_file_path, &input_file_size);
 
-    // TODO count instructions in first pass and malloc then
-    Instruction *instructions = malloc(1000);
+    // Initialize instruction array
+    size_t instructions_capacity = INST_ARRAY_STARTING_CAPACITY;
+    Instruction *instructions = malloc(instructions_capacity * sizeof(Instruction));
 
     // Parse code
-    int inst_count = 0;
-    int src_line_count = 0; // for pointing out errors
+    size_t inst_count = 0;
+    size_t src_line_count = 0; // for pointing out errors
+    //size_t char_on_line = 0; // nth char on current line
     for (size_t i = 0; input_buf[i] != '\0';) {
         // Skip whitespace
         switch (input_buf[i]) {
@@ -892,16 +914,21 @@ int main(int argc, char* argv[])
 
             // Check for error
             if (ainst == NULL) {
-                printf("Parse error at line %i\n", src_line_count + 1);
+                printf("Parse error at line %li\n", src_line_count + 1);
                 return 1;
             }
 
             // Add parsed instruction to array
+            if (inst_count >= instructions_capacity) {
+                // Realloc if more space needed
+                instructions_capacity += INST_ARRAY_CAPACITY_GROWTH_RATE;
+                instructions = realloc(instructions, instructions_capacity * sizeof(Instruction));
+            }
             instructions[inst_count] = (Instruction) { .type = A_INST, .inst = ainst };
 
 #if LOG_PARSER_OUTPUT == 1
             // Log
-            printf("%i: ", src_line_count + 1);
+            printf("%li: ", src_line_count + 1);
             log_inst(&instructions[inst_count]);
 #endif
 
@@ -942,17 +969,21 @@ int main(int argc, char* argv[])
             // Parse
             C_Instruction *cinst = parse_c_instruction(input_buf + i, end - 1);
             if (cinst == NULL) {
-                printf("Parse error at line %i\n", src_line_count + 1);
+                printf("Parse error at line %li\n", src_line_count + 1);
                 return 1;
             }
 
 
             // Add parsed instruction to array
+            if (inst_count >= instructions_capacity) {
+                instructions_capacity += INST_ARRAY_CAPACITY_GROWTH_RATE;
+                instructions = realloc(instructions, instructions_capacity * sizeof(Instruction));
+            }
             instructions[inst_count] = (Instruction) { .type = C_INST, .inst = cinst };
 
 #if LOG_PARSER_OUTPUT == 1
             // Log
-            printf("%i: ", src_line_count + 1);
+            printf("%li: ", src_line_count + 1);
             log_inst(&instructions[inst_count]);
 #endif
 
@@ -964,24 +995,37 @@ int main(int argc, char* argv[])
         }
     }
 
+    // Allocate memory for output buffer
+    // 16 bytes for the instruction code on each line
+    // 1 byte for newline on each line
+    // 1 byte at the end for null terminator
+    size_t output_buf_size = sizeof(char) * 17 * inst_count + 1;
+    char *output_buf = malloc(output_buf_size);
+    char *output_buf_p = output_buf;
+
     // Generate code
     for (size_t i = 0; i < inst_count; i++) {
         switch (instructions[i].type) {
             case A_INST: {
+                *output_buf_p++ = '0';
                 A_Instruction *inst = (A_Instruction*) (instructions[i].inst);
-                printf("0");
                 char *bin = int15_to_bin_str(inst->value);
-                printf("%s\n", int15_to_bin_str(inst->value));
+                output_buf_p += copy_str_no_nullterm(output_buf_p, bin);
                 free(bin);
+                *output_buf_p++ = '\n';
                 break;
             }
             case C_INST: {
-                printf("111");
+                output_buf_p += copy_str_no_nullterm(output_buf_p, "111");
                 C_Instruction *inst = (C_Instruction*) (instructions[i].inst);
-                printf("%s", comp_codes[inst->comp].bin);                
-                printf("%s", dest_codes[inst->dest].bin);
-                printf("%s", jump_codes[inst->jump].bin);
-                printf("\n");
+                output_buf_p += copy_str_no_nullterm(
+                    output_buf_p, comp_codes[inst->comp].bin);
+                output_buf_p += copy_str_no_nullterm(
+                    output_buf_p, dest_codes[inst->dest].bin);
+                output_buf_p += copy_str_no_nullterm(
+                    output_buf_p, jump_codes[inst->jump].bin);
+
+                *output_buf_p++ = '\n';
                 break;
             }
             default:
@@ -990,8 +1034,19 @@ int main(int argc, char* argv[])
         }
     }
 
+    *output_buf_p++ = '\0';
+
+    // Write file (size - 1 to exclude null terminator)
+    int error = write_file(output_buf, output_file_path, output_buf_size - 1);
+    if (error) {
+        printf("Error when writing to '%s'\n", output_file_path);
+    }
+
+    // Free all memory
     free(input_buf);
+    for (size_t i = 0; i < inst_count; i++)
+        free_instruction(instructions + i);
     free(instructions);
-    //free(output_buf);
+    free(output_buf);
     return 0;
 }
