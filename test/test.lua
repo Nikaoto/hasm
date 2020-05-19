@@ -43,26 +43,26 @@ local function test_files(filenames)
       local hack = fmt("%s/%s.hack", TEST_DIR, filename)
       local cmp = fmt("%s/%s.cmp.hack", TEST_DIR, filename)
 
-      local error = assemble(asm, hack)
-      expect(error).to_be(0)
+      local error_code = assemble(asm, hack)
+      expect(error_code).to_be(0)
 
-      local hack_content, cmp_content, ok
+      local hack_content, cmp_content, file_exists
 
-      ok, cmp_content = pcall(read_file_fully, cmp)
-      if not ok then
+      file_exists, cmp_content = pcall(read_file_fully, cmp)
+      expect(file_exists).to_be(true)
+      if not file_exists then
          print(fmt("ERROR: file %s doesn't exist", cmp))
-         goto continue
       end
 
-      ok, hack_content = pcall(read_file_fully, hack)
-      if not ok then
+      file_exists, hack_content = pcall(read_file_fully, hack)
+      expect(file_exists).to_be(true)
+      if not file_exists then
          print(fmt("ERROR: file %s doesn't exist", hack))
-         goto continue
       end
 
-      print(hack_content, cmp_content)
+      expect(cmp_content).not_.to_be("")
+      expect(hack_content).not_.to_be("")
       expect(hack_content).to_be(cmp_content)
-      ::continue::
    end
 end
 
@@ -75,11 +75,15 @@ test_files({
    "PongL",
 })
 
+lest.print_stats()
+
 --[[
 test_files({
    "Add",
    "Max",
    "Rect",
+   "Mult",
+   "Fill",
    "Pong",
 })
 --]]
