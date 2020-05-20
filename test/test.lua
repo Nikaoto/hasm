@@ -9,8 +9,8 @@ local fmt = string.format
 local HASM_PATH = arg[1] or "../hasm"
 local TEST_DIR = arg[2] or "sandbox"
 
-local function assemble(in_file, out_file)
-   return os.execute(fmt("%s %s -o %s", HASM_PATH, in_file, out_file))
+local function make_hasm_command(in_file, out_file)
+   return fmt("%s %s -o %s", HASM_PATH, in_file, out_file)
 end
 
 local function list_files_in_dir(dir_path)
@@ -42,8 +42,11 @@ local function test_files(filenames)
       local asm = fmt("%s/%s.asm", TEST_DIR, filename)
       local hack = fmt("%s/%s.hack", TEST_DIR, filename)
       local cmp = fmt("%s/%s.cmp.hack", TEST_DIR, filename)
+      local command = make_hasm_command(asm, hack)
 
-      local error_code = assemble(asm, hack)
+      group(fmt("%s", command))
+
+      local error_code = os.execute(command)
       expect(error_code).to_be(0)
 
       local hack_content, cmp_content, file_exists
@@ -68,7 +71,6 @@ end
 
 clean()
 
-group("without symbols")
 test_files({
    "MaxL",
    "RectL",
