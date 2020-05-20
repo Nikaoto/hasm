@@ -13,4 +13,8 @@ hasm_g: hasm.c file.c
 test:
 	cd test && luajit test.lua
 
-.PHONY: test all
+bench:
+	$(shell time -p ./bench.sh 1000 "./hasm test/sandbox/PongL.asm -o /dev/null > /dev/null")
+	@echo "Ran './hasm test/sandbox/PongL.asm -o /dev/null > /dev/null' 1000 times."
+
+.PHONY: all test bench
