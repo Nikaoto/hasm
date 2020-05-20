@@ -20,7 +20,7 @@
 #define FILE_PATH_SIZE                   200
 #define SYMBOL_TABLE_INITIAL_SIZE        100
 #define MAX_COMP_TOKEN_COUNT             3
-#define LOG_PARSER_OUTPUT                0
+#define LOG_PARSER_OUTPUT                1
 #define LOG_GENERATOR_OUTPUT             1
 #define INST_ARRAY_STARTING_CAPACITY     1024
 #define INST_ARRAY_CAPACITY_GROWTH_RATE  1024
@@ -50,6 +50,18 @@ inline int is_upper_alpha(char c)
 inline int is_number(char c)
 {
     return c >= '0' && c <= '9';
+}
+
+// Checks if char is allowed to be the first char of a symbol
+int is_valid_symbol_head(char c)
+{
+    return is_alpha(c) || c == '_' || c == '.' || c == '$' || c  == ':';
+}
+
+// Checks if char is allowed in a symbol as a non-first char
+int is_valid_symbol_tail(char c)
+{
+    return is_valid_symbol_head(c) || is_number(c);
 }
 
 // Returns 1 if 's' and 't' are the same (case insensitive)
@@ -492,13 +504,38 @@ const size_t jump_code_count = sizeof(jump_codes) / sizeof(Subinst_Code);
 
 enum INST_TYPE { A_INST, C_INST };
 
+// String, but defined by a range in memory (inclusive)
+// Doesn't have to be null-terminated
+typedef struct {
+    char *start; // inclusive
+    char *end; // inclusive
+} Slice;
+
+// TODO move this out
+// Copies Slice string into a malloced null-terminated string
+// Returns pointer to new string
+// NOTE: Only use for debugging & logging!
+char *slice_to_str(Slice *slice)
+{
+    size_t slice_len = slice->end - slice->start + 1;
+    char *str = malloc(sizeof(char) * (slice_len + 1));
+    memcpy(slice->start, str, sizeof(char) * slice_len);
+    str[slice_len] = '\0';
+    return str;
+}
+
+void print_slice(Slice *slice)
+{
+    print_str_range(slice->start, slice->end);
+}
+
 typedef struct {
     enum INST_TYPE type;
     void *inst;
 } Instruction;
 
 typedef struct {
-    char *symbol;
+    Slice *symbol;
     unsigned int value;
 } A_Instruction;
 
@@ -532,8 +569,31 @@ int power(int a, int b)
     return ans;
 }
 
-// Parses and returns first int from 'buf' to 'end' inclusive
-// TODO use 'end' to bound parsing
+// Returns true if the number satisfies the following
+// reg expression: ^-?[0-9]+$
+// Returns false otherwise
+int is_valid_value(char *buf, char *end)
+{
+    // Swallow leading minus, if present
+    if (*buf == '-') {
+        buf++;
+    }
+
+    if (buf > end)
+        return 0;
+
+    for (; buf <= end; buf++) {
+        if (!is_number(*buf)) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+// Parses and returns first int from 'buf' to 'end' inclusive.
+// NOTE: The given range MUST ONLY contain digits or a leading minus,
+//  otherwise, undefined behavior
 int parse_next_int(char *buf, char *end)
 {
     int num = 0;
@@ -552,12 +612,10 @@ int parse_next_int(char *buf, char *end)
         }
     }
 
-    // Move 'p' at the end of the number
-    char *p = buf;
-    while (is_number(*(p + 1)))
-        p++;
+    
 
     // Build num up backwards
+    char *p = end;
     size_t rpos = 0; // Position of current digit from right
     while (p >= buf) {
         int n = *p - '0';
@@ -594,14 +652,47 @@ char *int15_to_bin_str(unsigned int n)
     return str;
 }
 
-// Returns first symbol as malloced string from 'buf' to 'end' inclusive
-// Returns NULL if not found
-char *parse_next_symbol(char *buf, char *end)
+// Parses from 'buf' to 'end' inclusive
+// Returns first symbol found as malloced Slice
+// Returns NULL on parse error
+Slice *parse_next_symbol(char *buf, char *end)
 {
-    // TODO finish this
-    // TODO allow misc chars in symbol names
-    char *symbol = malloc(sizeof(char));
-    symbol[0] = '\0';
+    // Check head (first char)
+    if (!is_valid_symbol_head(buf[0])) {
+        return NULL;
+    }
+
+    size_t i = 1; // Continue checking from second char
+    for (; buf + i <= end; i++) {
+        if (is_valid_symbol_tail(buf[i]))
+            continue;
+        /* The if below enables the use of the following case in asm:
+                @MYVARIABLE       // declare my var\n
+                 ^---+----^^--+--^^-----------+---^
+                     |        |               |
+                  symbol   blankspace      comment
+
+           Here, 'buf' points to '@' and 'end' points to
+           the space before the first '/' */
+        if (buf[i] == ' ' || buf[i] == '\t') {
+            /* If symbol is followed by anything but whtiespace, exit.
+               Ex: '@MYVAR    ASD' should give fatal error.
+                     ^          ^
+                    buf        end
+            */
+            size_t j = i;
+            for (; buf + j <= end; j++) {
+                if (buf[j] == ' ' || buf[j] == '\t')
+                    continue;
+                return NULL;
+            }
+        }
+        return NULL;
+    }
+
+    Slice *symbol = malloc(sizeof(Slice));
+    symbol->start = buf;
+    symbol->end = buf + i - 1;
     return symbol;
 }
 
@@ -615,13 +706,26 @@ A_Instruction *parse_a_instruction(char *buf, char *end)
         .value = 0,
     };
 
-    buf++; // swallow '@'
-    if (is_alpha(*buf)) {
-        // Symbol
+    buf++; // Stand on char after '@'
+
+    // Skip blankspace
+    while (*buf == ' ' || *buf == '\t')
+        buf++;
+
+    if (is_number(*buf) || *buf == '-') {
+        // Values can start with [\-0-9]
+        // Check for parse errors
+        if (is_valid_value(buf, end))
+            tmp.value = parse_next_int(buf, end);
+        else
+            return NULL;
+    } else if (is_alpha(*buf) || *buf == '_' || *buf == '.' ||
+        *buf == '%' || *buf == ':') {
+        // Symbols can start with [a-zA-Z_.%:]
         tmp.symbol = parse_next_symbol(buf, end);
-    } else if (is_number(*buf) || *buf == '-') {
-        // Value
-        tmp.value = parse_next_int(buf, end);
+        // Check if parse error
+        if (tmp.symbol == NULL)
+            return NULL;
     } else {
         // Parse error
         return NULL;
@@ -808,18 +912,26 @@ C_Instruction *parse_c_instruction(char *buf, char* end)
     return inst;
 }
 
-int log_a_inst(A_Instruction *inst)
+void log_a_inst(A_Instruction *inst)
 {
-    return printf("A_Instruction {\n"
-        "\t.symbol = \"%s\"\n"
-        "\t.value = %i\n}\n",
-        inst->symbol ? inst->symbol : "NULL",
-        inst->value);
+    printf("A_Instruction {\n");
+    // Symbol
+    printf("\t.symbol = ");
+    if (inst->symbol) {
+        printf("\"");
+        print_slice(inst->symbol);
+        printf("\"");
+    } else {
+        printf("NULL");
+    }
+    printf("\n");
+    // Value
+    printf("\t.value = %i\n}\n", inst->value);
 }
 
-int log_c_inst(C_Instruction *inst)
+void log_c_inst(C_Instruction *inst)
 {
-    return printf("C_Instruction {\n"
+    printf("C_Instruction {\n"
         "\t.dest = %s (0x%X)\n"
         "\t.comp = %s (0x%X)\n"
         "\t.jump = %s (0x%X)\n}\n",
@@ -834,16 +946,14 @@ int log_c_inst(C_Instruction *inst)
         inst->jump);
 }
 
-int log_inst(Instruction *inst)
+void log_inst(Instruction *inst)
 {
     if (inst->type == A_INST)
-        return log_a_inst(inst->inst);
-
-    if (inst->type == C_INST)
-        return log_c_inst(inst->inst);
-
-    printf("log_inst: invalid INST_TYPE %i\n", inst->type);
-    return 0;
+        log_a_inst(inst->inst);
+    else if (inst->type == C_INST)
+        log_c_inst(inst->inst);
+    else
+        printf("log_inst: invalid INST_TYPE %i\n", inst->type);
 }
 
 int main(int argc, char* argv[])
@@ -868,10 +978,9 @@ int main(int argc, char* argv[])
     size_t instructions_capacity = INST_ARRAY_STARTING_CAPACITY;
     Instruction *instructions = malloc(instructions_capacity * sizeof(Instruction));
 
-    // Parse code
+    // Parse code into instruction array and populate symbol table with labels
     size_t inst_count = 0;
     size_t src_line_count = 0; // for pointing out errors
-    //size_t char_on_line = 0; // nth char on current line
     for (size_t i = 0; input_buf[i] != '\0';) {
         // Skip whitespace
         switch (input_buf[i]) {
@@ -895,6 +1004,7 @@ int main(int argc, char* argv[])
 
         // Handle A-instruction
         if (input_buf[i] == '@') {
+            // TODO write 'i++;' here
             // Skip blankspace between '@' and symbol
             while (input_buf[i] == ' ' || input_buf[i] == '\t')
                 i++;
@@ -939,15 +1049,59 @@ int main(int argc, char* argv[])
             continue;
         }
 
-        // Handle label
+        // Handle label (push into symbol table)
         if (input_buf[i] == '(') {
-            // Skip blankspace between '(' and label
-            while (input_buf[i] == ' ' || input_buf[i] == '\t')
+            // Find end of line
+            char *end = find_next_any(input_buf + i, "\r\n");
+
+            i++; // Swallow '('
+
+            // Find comment between token and end of line
+            char *comment_start = strstr_range(input_buf + i, end - 1, "//");
+            if (comment_start != NULL) {
+                // Parse from start of line until comment start
+                end = comment_start;
+            }
+
+            // Check head (first char)
+            if (!is_valid_symbol_head(input_buf[i])) {
+                printf("Parse error at line %li\n", src_line_count + 1);
+                printf("Label names must start with a letter\n");
+                return 1;
+            }
+
+            Slice label = { .start = input_buf + i, .end = 0 };
+            i++; // Move to second char
+            // Walk to end of label name
+            for (; input_buf + i < end; i++) {
+                if (!is_valid_symbol_tail(input_buf[i]))
+                    break;
+            }
+
+            // Skip blankspace between label name and ')'
+            while (is_blank(input_buf[i]))
                 i++;
-            // Parse from 'i' until end of line or file
-            //size_t end = find_next(input_buf, i, ")");
-            // TODO allow blankspace between parentheses
-            //parse_label(input_buf, i, end, inst_count);
+
+            if (input_buf[i] != ')') {
+                printf("Parse error at line %li\n", src_line_count + 1);
+                printf("Missing ')' for label definition\n");
+                return 1;
+            }
+
+            // Mark end of label slice
+            label.end = input_buf + i - 1;
+
+            // TODO check label against symbol table. If duplicate, exit.
+            // If unique, insert into symbol table with value of inst_count
+
+#if LOG_PARSER_OUTPUT == 1
+            // Log
+            printf("%li: ", src_line_count + 1);
+            printf("Label '");
+            print_slice(&label);
+            printf("' -> instruction %li\n", inst_count);
+#endif
+
             // Skip rest of line
             i = find_next_any_index(input_buf, i, "\r\n") + 1;
             continue;
@@ -972,7 +1126,6 @@ int main(int argc, char* argv[])
                 printf("Parse error at line %li\n", src_line_count + 1);
                 return 1;
             }
-
 
             // Add parsed instruction to array
             if (inst_count >= instructions_capacity) {
