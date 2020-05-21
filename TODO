@@ -1,12 +1,11 @@
 TODO
-- symbol support
 - make bench (luajit script that times compilation)
-- checks when skipping blankspace in parsing functions
-- Count current character in current line (for better error messages)
+- bound checks when skipping blankspace in parsing functions
 - Use hashmap for symbol_pairs, comp_codes, jump_codes, and dest_codes.
 Make sure to pre-hash the string values and store items at respective indexes.
 - Free memory on fatal errors before exiting.
 - Move string functions into separate file
 - Make parse_arguments more general to handle declarative argument assignment (and
 add options for logging)
-- allow label declarations without parentheses. Ex: 'THIS_IS_A_LABEL: @LOOP'
+- allow label declarations without parentheses and with a colon. Ex: 'THIS_IS_A_LABEL: @LOOP'
+- report unused labels as warning?
