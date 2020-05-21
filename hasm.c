@@ -14,16 +14,17 @@
 #include <ctype.h>
 #include "file.h"
 
-#define MIN_ARGC                         2
-#define MAX_ARGC                         4
-#define ERR_TEXT_SIZE                    200
-#define FILE_PATH_SIZE                   200
-#define SYMBOL_TABLE_INITIAL_SIZE        100
-#define MAX_COMP_TOKEN_COUNT             3
-#define LOG_PARSER_OUTPUT                1
-#define LOG_GENERATOR_OUTPUT             1
-#define INST_ARRAY_STARTING_CAPACITY     1024
-#define INST_ARRAY_CAPACITY_GROWTH_RATE  1024
+#define MIN_ARGC                           2
+#define MAX_ARGC                           4
+#define ERR_TEXT_SIZE                      200
+#define FILE_PATH_SIZE                     200
+#define SYMBOL_TABLE_INITIAL_SIZE          100
+#define MAX_COMP_TOKEN_COUNT               3
+#define LOG_PARSER_OUTPUT                  0
+#define LOG_GENERATOR_OUTPUT               1
+#define INST_ARRAY_STARTING_CAPACITY       1024
+#define INST_ARRAY_CAPACITY_GROWTH_RATE    1024
+#define SYMBOL_PAIRS_SIZE                  4096
 
 // Blankspace is ' ' or '\t'
 inline int is_blank(char c)
@@ -337,14 +338,57 @@ int parse_arguments(int argc, char* argv[],
     return 0;
 }
 
+// String, but defined by a range in memory (inclusive)
+// Doesn't have to be null-terminated
+typedef struct {
+    char *start; // inclusive
+    char *end; // inclusive
+} Slice;
+
+// TODO move this out
+// Copies Slice string into a malloced null-terminated string
+// Returns pointer to new string
+// NOTE: Only use for debugging & logging!
+char *slice_to_str(Slice *slice)
+{
+    size_t slice_len = slice->end - slice->start + 1;
+    char *str = malloc(sizeof(char) * (slice_len + 1));
+    memcpy(str, slice->start, sizeof(char) * slice_len);
+    str[slice_len] = '\0';
+    return str;
+}
+
+// TODO move this out
+// Return 0 if string and slice are equal. Return 1 otherwise
+char cmp_str_slice(char *str, Slice *slice)
+{
+    char *slice_p = slice->start;
+    while (*str && slice_p <= slice->end) {
+        if (*str != *slice_p)
+            return 1;
+        slice_p++;
+        str++;
+    }
+
+    if (*str == '\0' && slice_p == slice->end + 1)
+        return 0;
+
+    return 1;
+}
+
+// TODO move this out
+void print_slice(Slice *slice)
+{
+    print_str_range(slice->start, slice->end);
+}
+
 typedef struct {
     char *p0;
     int p1;
 }  Str_Int_Pair;
 
 // Slow (but simple) associative array
-int symbol_pairs_size = SYMBOL_TABLE_INITIAL_SIZE;
-Str_Int_Pair symbol_pairs[SYMBOL_TABLE_INITIAL_SIZE] = {
+Str_Int_Pair symbol_pairs[SYMBOL_PAIRS_SIZE] = {
     { "SP",     0 },
     { "LCL",    1 },
     { "ARG",    2 },
@@ -370,22 +414,33 @@ Str_Int_Pair symbol_pairs[SYMBOL_TABLE_INITIAL_SIZE] = {
     { "KBD",    0x6000 },
 };
 // Index of last element + 1 in symbol_pairs array
-int symbol_pairs_i = 23;
+size_t symbol_pairs_i = 23;
 
-Str_Int_Pair *find_pair_by_str(Str_Int_Pair a[], char *str)
+// Returns pointer to pair if found. Returns NULL otherwise
+Str_Int_Pair *find_pair_by_str(Str_Int_Pair a[], size_t len, char *str)
 {
-    while (a != NULL) {
-        if (strcmp(a->p0, str) == 0) {
-            return a;
+    for (size_t j = 0; j < len; j++) {
+        if (strcmp(a[j].p0, str) == 0) {
+            return a + j;
         }
-        a += sizeof(Str_Int_Pair);
+    }
+    return NULL;
+}
+
+// Returns pointer to pair if found. Returns NULL otherwise
+Str_Int_Pair *find_pair_by_slice(Str_Int_Pair a[], size_t len, Slice *slice)
+{
+    for (size_t j = 0; j < len; j++) {
+        if (cmp_str_slice(a[j].p0, slice) == 0) {
+            return a + j;
+        }
     }
     return NULL;
 }
 
 int log_pair(Str_Int_Pair *p)
 {
-    return printf("%s, %i\n", p->p0, p->p1);
+    return printf("{ \"%s\", %i }", p->p0, p->p1);
 }
 
 // Subinstruction can be 'comp', 'dest', 'jump'...
@@ -423,10 +478,13 @@ enum COMP {
     COMP_D_MINUS_1,
     COMP_A_MINUS_1,  COMP_M_MINUS_1,
     COMP_D_PLUS_A,   COMP_D_PLUS_M,
+    COMP_A_PLUS_D,   COMP_M_PLUS_D,
     COMP_D_MINUS_A,  COMP_D_MINUS_M,
     COMP_A_MINUS_D,  COMP_M_MINUS_D,
     COMP_D_AND_A,    COMP_D_AND_M,
     COMP_D_OR_A,     COMP_D_OR_M,
+    COMP_A_AND_D,    COMP_M_AND_D,
+    COMP_A_OR_D,     COMP_M_OR_D,
     COMP_PARSE_ERROR,
 };
 
@@ -447,10 +505,13 @@ const Subinst_Code comp_codes[] = {
     { "D-1", COMP_D_MINUS_1, "0001110" },
     { "A-1", COMP_A_MINUS_1, "0110010" }, { "M-1", COMP_M_MINUS_1, "1110010" },
     { "D+A", COMP_D_PLUS_A,  "0000010" }, { "D+M", COMP_D_PLUS_M,  "1000010" },
+    { "A+D", COMP_A_PLUS_D,  "0000010" }, { "M+D", COMP_M_PLUS_D,  "1000010" },
     { "D-A", COMP_D_MINUS_A, "0010011" }, { "D-M", COMP_D_MINUS_M, "1010011" },
     { "A-D", COMP_A_MINUS_D, "0000111" }, { "M-D", COMP_M_MINUS_D, "1000111" },
     { "D&A", COMP_D_AND_A,   "0000000" }, { "D&M", COMP_D_AND_M,   "1000000" },
     { "D|A", COMP_D_OR_A,    "0010101" }, { "D|M", COMP_D_OR_M,    "1010101" },
+    { "A&D", COMP_A_AND_D,   "0000000" }, { "M&D", COMP_M_AND_D,   "1000000" },
+    { "A|D", COMP_A_OR_D,    "0010101" }, { "M|D", COMP_M_OR_D,    "1010101" },
 };
 const size_t comp_code_count = sizeof(comp_codes) / sizeof(Subinst_Code);
 
@@ -504,31 +565,6 @@ const size_t jump_code_count = sizeof(jump_codes) / sizeof(Subinst_Code);
 
 enum INST_TYPE { A_INST, C_INST };
 
-// String, but defined by a range in memory (inclusive)
-// Doesn't have to be null-terminated
-typedef struct {
-    char *start; // inclusive
-    char *end; // inclusive
-} Slice;
-
-// TODO move this out
-// Copies Slice string into a malloced null-terminated string
-// Returns pointer to new string
-// NOTE: Only use for debugging & logging!
-char *slice_to_str(Slice *slice)
-{
-    size_t slice_len = slice->end - slice->start + 1;
-    char *str = malloc(sizeof(char) * (slice_len + 1));
-    memcpy(slice->start, str, sizeof(char) * slice_len);
-    str[slice_len] = '\0';
-    return str;
-}
-
-void print_slice(Slice *slice)
-{
-    print_str_range(slice->start, slice->end);
-}
-
 typedef struct {
     enum INST_TYPE type;
     void *inst;
@@ -537,6 +573,7 @@ typedef struct {
 typedef struct {
     Slice *symbol;
     unsigned int value;
+    int eval; // true if .value is correct (or was evaluated)
 } A_Instruction;
 
 typedef struct {
@@ -704,6 +741,7 @@ A_Instruction *parse_a_instruction(char *buf, char *end)
     A_Instruction tmp = {
         .symbol = NULL,
         .value = 0,
+        .eval = 0,
     };
 
     buf++; // Stand on char after '@'
@@ -715,10 +753,12 @@ A_Instruction *parse_a_instruction(char *buf, char *end)
     if (is_number(*buf) || *buf == '-') {
         // Values can start with [\-0-9]
         // Check for parse errors
-        if (is_valid_value(buf, end))
+        if (is_valid_value(buf, end)) {
             tmp.value = parse_next_int(buf, end);
-        else
+            tmp.eval = 1;
+        } else {
             return NULL;
+        }
     } else if (is_alpha(*buf) || *buf == '_' || *buf == '.' ||
         *buf == '%' || *buf == ':') {
         // Symbols can start with [a-zA-Z_.%:]
@@ -770,7 +810,7 @@ enum DEST parse_c_dest(char *buf, char *end)
     return dest;
 }
 
-// Parses comp in C-instruction between 'buf' and 'end'
+// Parses comp in C-instruction for range 'buf' to 'end' inclusive
 // Returns COMP_PARSE_ERROR if parse error encountered
 enum COMP parse_c_comp(char *buf, char *end)
 {
@@ -887,6 +927,7 @@ C_Instruction *parse_c_instruction(char *buf, char* end)
         comp_end = semicolon - 1;
         buf = semicolon + 1; // stand on char after ';'
     }
+
     tmp.comp = parse_c_comp(comp_start, comp_end);
 
     // Skip blankspace between 'comp;' and 'jump'
@@ -905,6 +946,11 @@ C_Instruction *parse_c_instruction(char *buf, char* end)
         }
     } else {
         tmp.jump = parse_c_jump(buf, end);
+    }
+
+    // Exit if parse error
+    if (tmp.jump == JUMP_PARSE_ERROR) {
+        return NULL;
     }
 
     C_Instruction *inst = malloc(sizeof(C_Instruction));
@@ -926,7 +972,9 @@ void log_a_inst(A_Instruction *inst)
     }
     printf("\n");
     // Value
-    printf("\t.value = %i\n}\n", inst->value);
+    printf("\t.value = %i\n", inst->value);
+    // Evaluated
+    printf("\t.eval = %i\n}\n", inst->eval);
 }
 
 void log_c_inst(C_Instruction *inst)
@@ -1038,7 +1086,7 @@ int main(int argc, char* argv[])
 
 #if LOG_PARSER_OUTPUT == 1
             // Log
-            printf("%li: ", src_line_count + 1);
+            printf("%li: [%li]", src_line_count + 1, inst_count);
             log_inst(&instructions[inst_count]);
 #endif
 
@@ -1054,7 +1102,7 @@ int main(int argc, char* argv[])
             // Find end of line
             char *end = find_next_any(input_buf + i, "\r\n");
 
-            i++; // Swallow '('
+            i++; // Stand on char after '('
 
             // Find comment between token and end of line
             char *comment_start = strstr_range(input_buf + i, end - 1, "//");
@@ -1072,7 +1120,7 @@ int main(int argc, char* argv[])
 
             Slice label = { .start = input_buf + i, .end = 0 };
             i++; // Move to second char
-            // Walk to end of label name
+            // Walk to char after label name
             for (; input_buf + i < end; i++) {
                 if (!is_valid_symbol_tail(input_buf[i]))
                     break;
@@ -1088,11 +1136,31 @@ int main(int argc, char* argv[])
                 return 1;
             }
 
+            // TODO allow colon after label definition
+
             // Mark end of label slice
             label.end = input_buf + i - 1;
 
-            // TODO check label against symbol table. If duplicate, exit.
-            // If unique, insert into symbol table with value of inst_count
+            // Find duplicate
+            // TODO remove this conversion
+            char *label_str = slice_to_str(&label);
+            Str_Int_Pair *p = find_pair_by_str(symbol_pairs, symbol_pairs_i, label_str);
+
+            // Duplicate found
+            if (p != NULL) {
+                printf("Error at line %li\n", src_line_count + 1);
+                printf("Duplicate symbol definition of '");
+                print_slice(&label);
+                printf("'\n");
+                free(label_str);
+                return 1;
+            }
+
+            // Insert into symbol table TODO change to hash map
+            symbol_pairs[symbol_pairs_i++] = (Str_Int_Pair) {
+                .p0 = label_str,
+                .p1 = inst_count,
+            };
 
 #if LOG_PARSER_OUTPUT == 1
             // Log
@@ -1136,7 +1204,7 @@ int main(int argc, char* argv[])
 
 #if LOG_PARSER_OUTPUT == 1
             // Log
-            printf("%li: ", src_line_count + 1);
+            printf("%li: [%li]", src_line_count + 1, inst_count);
             log_inst(&instructions[inst_count]);
 #endif
 
@@ -1148,6 +1216,17 @@ int main(int argc, char* argv[])
         }
     }
 
+#if LOG_PARSER_OUTPUT == 1
+    // Dump symbol table before evals
+    printf("symbol_pairs = {\n");
+    for (size_t j = 0; j < symbol_pairs_i; j++) {
+        printf("\t");
+        log_pair(symbol_pairs + j);
+        printf("\n");
+    }
+    printf("}\n");
+#endif
+
     // Allocate memory for output buffer
     // 16 bytes for the instruction code on each line
     // 1 byte for newline on each line
@@ -1156,8 +1235,68 @@ int main(int argc, char* argv[])
     char *output_buf = malloc(output_buf_size);
     char *output_buf_p = output_buf;
 
+    // First pass
+    // Fill in symbol values and set each a_inst.eval to true
+    size_t mem = 16;
+    for (size_t i = 0; i < inst_count; i++) {
+        if (instructions[i].type == C_INST)
+            continue;
+        
+        A_Instruction *a_inst = (A_Instruction*) (instructions[i].inst);
+
+        // Skip if already evaluated
+        if (a_inst->eval == 1)
+            continue;
+
+        // This could save us a huge headache in the future
+        if (a_inst->symbol == NULL) {
+            printf("FATAL ERROR: unevaluated A_Instruction symbol "
+                "can't be NULL\n");
+            printf("Check instruction %li\n", i);
+            return 1;
+        }
+
+        // Scan symbol table TODO use hash func here (when we have hash map)
+        Str_Int_Pair *pair = find_pair_by_slice(symbol_pairs, symbol_pairs_i,
+            a_inst->symbol);
+        // Symbol found in table, evaluate it
+        if (pair != NULL) {
+            a_inst->value = pair->p1;
+        } else {
+            // Symbol not found in table
+            // Insert symbol into table and assign unused static memory address
+            // TODO change to hash map
+            char *symbol_str = slice_to_str(a_inst->symbol);
+            symbol_pairs[symbol_pairs_i++] = (Str_Int_Pair) {
+                .p0 = symbol_str,
+                .p1 = mem, // Assign unused static memory address
+            };
+            a_inst->value = mem;
+            mem++;
+        }
+
+        // Mark as evaluated
+        a_inst->eval = 1;
+    }
+
+#if LOG_PARSER_OUTPUT == 1
+    // Dump symbol table after evals
+    printf("symbol_pairs (after evals) = {\n");
+    for (size_t j = 0; j < symbol_pairs_i; j++) {
+        printf("\t");
+        log_pair(symbol_pairs + j);
+        printf("\n");
+    }
+    printf("}\n");
+#endif
+
+
     // Generate code
     for (size_t i = 0; i < inst_count; i++) {
+#if LOG_PARSER_OUTPUT == 1
+        printf("[%li]: ", i);
+        log_inst(&instructions[i]);
+#endif
         switch (instructions[i].type) {
             case A_INST: {
                 *output_buf_p++ = '0';
