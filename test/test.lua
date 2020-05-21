@@ -77,9 +77,6 @@ test_files({
    "PongL",
 })
 
-lest.print_stats()
-
---[[
 test_files({
    "Add",
    "Max",
@@ -88,4 +85,5 @@ test_files({
    "Fill",
    "Pong",
 })
---]]
+
+lest.print_stats()
