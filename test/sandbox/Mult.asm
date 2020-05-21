@@ -61,8 +61,8 @@
     D=M // D = nota_and_notb
     @sign
     M=M&D
-    // sign &= 2^15
-    @32768
+    // sign &= 2^14
+    @16384
     D=A
     @sign
     M=M&D
