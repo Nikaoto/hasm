@@ -1,4 +1,5 @@
 TODO
+- update readme to include more info
 - make bench (luajit script that times compilation)
 - bound checks when skipping blankspace in parsing functions
 - Use hashmap for symbol_pairs, comp_codes, jump_codes, and dest_codes.

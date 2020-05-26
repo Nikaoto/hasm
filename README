@@ -1,7 +1,10 @@
 hasm - hack (virtual computer) assembler
 
 Usage: hasm infile [-o outfile]
-Assembles `infile` and creates an ASCII-encoded hack binary `infile.hack`.
+Assembles 'infile' and creates an ASCII-encoded hack binary 'infile.hack'.
 
 Options:
     -o outfile      specify output file
+
+License:
+    2-clause BSD. Look at LICENSE file for more details.
