@@ -593,7 +593,7 @@ void free_instruction(Instruction *i)
 }
 
 // Returns a^b
-// 'b' must be a positive
+// 'b' must be non-negative (given the return type of the function)
 int power(int a, int b)
 {
     if (a == 0)
@@ -649,8 +649,6 @@ int parse_next_int(char *buf, char *end)
         }
     }
 
-    
-
     // Build num up backwards
     char *p = end;
     size_t rpos = 0; // Position of current digit from right
@@ -668,6 +666,7 @@ int parse_next_int(char *buf, char *end)
 }
 
 // Converts 15-bit int to binary (ascii) string. Returns its pointer
+// TODO don't use malloc and write to passed char *str.
 char *int15_to_bin_str(unsigned int n)
 {
     char *str = malloc(sizeof(char) * 16);
@@ -709,7 +708,7 @@ Slice *parse_next_symbol(char *buf, char *end)
                      |        |               |
                   symbol   blankspace      comment
 
-           Here, 'buf' points to '@' and 'end' points to
+           Here, 'buf' points to 'M' and 'end' points to
            the space before the first '/' */
         if (buf[i] == ' ' || buf[i] == '\t') {
             /* If symbol is followed by anything but whtiespace, exit.
@@ -778,6 +777,7 @@ A_Instruction *parse_a_instruction(char *buf, char *end)
 
 // Parses dest in C-instruction between 'buf' and 'end'
 // Returns DEST_PARSE_ERROR if parse error encountered
+// TODO don't allow multiple occurrences of a,m, or d. Ex: 'AAA', 'MDD'...
 enum DEST parse_c_dest(char *buf, char *end)
 {
     enum DEST dest = DEST_NULL;
@@ -810,7 +810,7 @@ enum DEST parse_c_dest(char *buf, char *end)
     return dest;
 }
 
-// Parses comp in C-instruction for range 'buf' to 'end' inclusive
+// Parses comp in C-instruction from 'buf' to 'end' inclusive
 // Returns COMP_PARSE_ERROR if parse error encountered
 enum COMP parse_c_comp(char *buf, char *end)
 {
@@ -819,37 +819,35 @@ enum COMP parse_c_comp(char *buf, char *end)
     size_t i = 0; // index for comp_str
     for (; buf <= end; buf++) {
         switch (*buf) {
-            // Skip whitespace
-            case ' ':
-            case '\t':
-                break;
-            // Valid tokens
-            case 'A':
-            case 'a':
-            case 'M':
-            case 'm':
-            case 'D':
-            case 'd':
-            case '0':
-            case '1':
-            case '+':
-            case '-':
-            case '!':
-            case '&':
-            case '|': {
-                if (i >= MAX_COMP_TOKEN_COUNT) {
-                    printf("Too many tokens in comp section\n");
-                    return COMP_PARSE_ERROR;
-                }
-                comp_str[i] = toupper(*buf);
-                i++;
-                break;
-            }
-            // Everything else is invalid
-            default: {
-                printf("Invalid token '%c' in comp\n", *buf);
+        // Skip whitespace
+        case ' ':
+        case '\t':
+            break;
+        // Valid tokens
+        case 'A':
+        case 'a':
+        case 'M':
+        case 'm':
+        case 'D':
+        case 'd':
+        case '0':
+        case '1':
+        case '+':
+        case '-':
+        case '!':
+        case '&':
+        case '|':
+            if (i >= MAX_COMP_TOKEN_COUNT) {
+                printf("Too many tokens in comp section\n");
                 return COMP_PARSE_ERROR;
             }
+            comp_str[i] = toupper(*buf);
+            i++;
+            break;
+        // Everything else is invalid
+        default:
+            printf("Invalid token '%c' in comp\n", *buf);
+            return COMP_PARSE_ERROR;
         }
     }
 
@@ -1024,7 +1022,8 @@ int main(int argc, char* argv[])
 
     // Initialize instruction array
     size_t instructions_capacity = INST_ARRAY_STARTING_CAPACITY;
-    Instruction *instructions = malloc(instructions_capacity * sizeof(Instruction));
+    Instruction *instructions = malloc(instructions_capacity *
+        sizeof(Instruction));
 
     // Parse code into instruction array and populate symbol table with labels
     size_t inst_count = 0;
@@ -1032,15 +1031,15 @@ int main(int argc, char* argv[])
     for (size_t i = 0; input_buf[i] != '\0';) {
         // Skip whitespace
         switch (input_buf[i]) {
-            case ' ':
-            case '\t':
-            case '\r':
-                i++;
-                continue;
-            case '\n':
-                i++;
-                src_line_count++;
-                continue;
+        case ' ':
+        case '\t':
+        case '\r':
+            i++;
+            continue;
+        case '\n':
+            i++;
+            src_line_count++;
+            continue;
         }
 
         // Handle comment
@@ -1052,7 +1051,7 @@ int main(int argc, char* argv[])
 
         // Handle A-instruction
         if (input_buf[i] == '@') {
-            // TODO write 'i++;' here
+            // TODO write 'i++;' here but check that tests pass
             // Skip blankspace between '@' and symbol
             while (input_buf[i] == ' ' || input_buf[i] == '\t')
                 i++;
@@ -1080,9 +1079,13 @@ int main(int argc, char* argv[])
             if (inst_count >= instructions_capacity) {
                 // Realloc if more space needed
                 instructions_capacity += INST_ARRAY_CAPACITY_GROWTH_RATE;
-                instructions = realloc(instructions, instructions_capacity * sizeof(Instruction));
+                instructions = realloc(instructions,
+                    instructions_capacity * sizeof(Instruction));
             }
-            instructions[inst_count] = (Instruction) { .type = A_INST, .inst = ainst };
+            instructions[inst_count] = (Instruction) {
+                .type = A_INST,
+                .inst = ainst
+            };
 
 #if LOG_PARSER_OUTPUT == 1
             // Log
@@ -1144,7 +1147,8 @@ int main(int argc, char* argv[])
             // Find duplicate
             // TODO remove this conversion
             char *label_str = slice_to_str(&label);
-            Str_Int_Pair *p = find_pair_by_str(symbol_pairs, symbol_pairs_i, label_str);
+            Str_Int_Pair *p = find_pair_by_str(symbol_pairs, symbol_pairs_i,
+                label_str);
 
             // Duplicate found
             if (p != NULL) {
@@ -1198,9 +1202,13 @@ int main(int argc, char* argv[])
             // Add parsed instruction to array
             if (inst_count >= instructions_capacity) {
                 instructions_capacity += INST_ARRAY_CAPACITY_GROWTH_RATE;
-                instructions = realloc(instructions, instructions_capacity * sizeof(Instruction));
+                instructions = realloc(instructions,
+                    instructions_capacity * sizeof(Instruction));
             }
-            instructions[inst_count] = (Instruction) { .type = C_INST, .inst = cinst };
+            instructions[inst_count] = (Instruction) {
+                .type = C_INST,
+                .inst = cinst
+            };
 
 #if LOG_PARSER_OUTPUT == 1
             // Log
@@ -1290,7 +1298,6 @@ int main(int argc, char* argv[])
     printf("}\n");
 #endif
 
-
     // Generate code
     for (size_t i = 0; i < inst_count; i++) {
 #if LOG_PARSER_OUTPUT == 1
@@ -1298,31 +1305,31 @@ int main(int argc, char* argv[])
         log_inst(&instructions[i]);
 #endif
         switch (instructions[i].type) {
-            case A_INST: {
-                *output_buf_p++ = '0';
-                A_Instruction *inst = (A_Instruction*) (instructions[i].inst);
-                char *bin = int15_to_bin_str(inst->value);
-                output_buf_p += copy_str_no_nullterm(output_buf_p, bin);
-                free(bin);
-                *output_buf_p++ = '\n';
-                break;
-            }
-            case C_INST: {
-                output_buf_p += copy_str_no_nullterm(output_buf_p, "111");
-                C_Instruction *inst = (C_Instruction*) (instructions[i].inst);
-                output_buf_p += copy_str_no_nullterm(
-                    output_buf_p, comp_codes[inst->comp].bin);
-                output_buf_p += copy_str_no_nullterm(
-                    output_buf_p, dest_codes[inst->dest].bin);
-                output_buf_p += copy_str_no_nullterm(
-                    output_buf_p, jump_codes[inst->jump].bin);
+        case A_INST: {
+            *output_buf_p++ = '0';
+            A_Instruction *inst = (A_Instruction*) (instructions[i].inst);
+            char *bin = int15_to_bin_str(inst->value);
+            output_buf_p += copy_str_no_nullterm(output_buf_p, bin);
+            free(bin);
+            *output_buf_p++ = '\n';
+            break;
+        }
+        case C_INST: {
+            output_buf_p += copy_str_no_nullterm(output_buf_p, "111");
+            C_Instruction *inst = (C_Instruction*) (instructions[i].inst);
+            output_buf_p += copy_str_no_nullterm(
+                output_buf_p, comp_codes[inst->comp].bin);
+            output_buf_p += copy_str_no_nullterm(
+                output_buf_p, dest_codes[inst->dest].bin);
+            output_buf_p += copy_str_no_nullterm(
+                output_buf_p, jump_codes[inst->jump].bin);
 
-                *output_buf_p++ = '\n';
-                break;
-            }
-            default:
-                printf("Invalid INST_TYPE in instruction %li\n", i);
-                return 1;
+            *output_buf_p++ = '\n';
+            break;
+        }
+        default:
+            printf("Invalid INST_TYPE in instruction %li\n", i);
+            return 1;
         }
     }
 
