@@ -1060,7 +1060,7 @@ int main(int argc, char* argv[])
             char *end = find_next_any(input_buf + i, " \r\n");
 
             // Find comment between token and end of line
-            char *comment_start = strstr_range(input_buf + i, "//", end - 1);
+            char *comment_start = strstr_range(input_buf + i, end - 1, "//");
             if (comment_start != NULL) {
                 // Parse from start of line until comment start
                 end = comment_start;
