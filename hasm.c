@@ -160,7 +160,7 @@ int strindex_last(char *s, char *t)
     while (s != s_start) {
         while (*s-- == *t--) {
             if ((t == t_start && *s == *t) || t_end == t_start) // Return index
-                return s - s_start;
+                return s - s_start + ((t_end == t_start) ? 1 : 0);
         }
         t = t_end; // Reset t
     }
