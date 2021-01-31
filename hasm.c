@@ -21,7 +21,7 @@
 #define SYMBOL_TABLE_INITIAL_SIZE          100
 #define MAX_COMP_TOKEN_COUNT               3
 #define LOG_PARSER_OUTPUT                  0
-#define LOG_GENERATOR_OUTPUT               1
+#define LOG_GENERATOR_OUTPUT               0
 #define INST_ARRAY_STARTING_CAPACITY       1024
 #define INST_ARRAY_CAPACITY_GROWTH_RATE    1024
 #define SYMBOL_PAIRS_SIZE                  4096
