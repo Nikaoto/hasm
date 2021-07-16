@@ -517,14 +517,14 @@ const size_t comp_code_count = sizeof(comp_codes) / sizeof(Subinst_Code);
 
 // Dest syntax definition
 enum DEST {
-    DEST_NULL = 0,
-    DEST_M,
-    DEST_D,
-    DEST_MD,
-    DEST_A,
-    DEST_AM,
-    DEST_AD,
-    DEST_AMD,
+    DEST_NULL = 0b000,
+    DEST_M    = 0b001,
+    DEST_D    = 0b010,
+    DEST_MD   = 0b011,
+    DEST_A    = 0b100,
+    DEST_AM   = 0b101,
+    DEST_AD   = 0b110,
+    DEST_AMD  = 0b111,
     DEST_PARSE_ERROR,
 };
 
