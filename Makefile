@@ -1,6 +1,6 @@
 # Makefile
 CC:= gcc
-CFLAGS:= -Wall -pedantic -std=c99 -O2
+CFLAGS:= -Wall -Wpedantic -std=c99 -O2
 
 all: hasm
 
@@ -10,11 +10,10 @@ hasm: hasm.c file.c
 hasm_g: hasm.c file.c
 	$(CC) $(CFLAGS) $^ -g -o hasm_g
 
-test:
+test: hasm
 	cd test && luajit test.lua
 
-bench:
-	$(shell time -p ./bench.sh 1000 "./hasm test/sandbox/Pong.asm -o /dev/null > /dev/null")
-	@echo "Ran './hasm test/sandbox/Pong.asm -o /dev/null > /dev/null' 1000 times."
+bench: hasm
+	time -p ./bench.sh 1000 "./hasm test/sandbox/Pong.asm -o /dev/null > /dev/null"
 
 .PHONY: all test bench

@@ -27,28 +27,28 @@
 #define SYMBOL_PAIRS_SIZE                  4096
 
 // Blankspace is ' ' or '\t'
-inline int is_blank(char c)
+int is_blank(char c)
 {
     return c == ' ' || c == '\t';
 }
 
 // Whitespace is blankspace or '\n' or '\r'
-inline int is_space(char c)
+int is_space(char c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
-inline int is_alpha(char c)
+int is_alpha(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-inline int is_upper_alpha(char c)
+int is_upper_alpha(char c)
 {
     return c >= 'A' && c <= 'Z';
 }
 
-inline int is_number(char c)
+int is_number(char c)
 {
     return c >= '0' && c <= '9';
 }
@@ -187,7 +187,7 @@ char *find_next_any(char *str, char *chars)
 // Find next index of any char from 'c' or '\0' after 'str[i]'
 // Return last index (length - 1) if not found
 // Both 'c' and 'str' must be null-terminated, so it doesn't halt
-inline size_t find_next_any_index(char *str, size_t i, char *c)
+size_t find_next_any_index(char *str, size_t i, char *c)
 {
     return find_next_any(str + i, c) - str;
 }
@@ -517,14 +517,14 @@ const size_t comp_code_count = sizeof(comp_codes) / sizeof(Subinst_Code);
 
 // Dest syntax definition
 enum DEST {
-    DEST_NULL = 0b000,
-    DEST_M    = 0b001,
-    DEST_D    = 0b010,
-    DEST_MD   = 0b011,
-    DEST_A    = 0b100,
-    DEST_AM   = 0b101,
-    DEST_AD   = 0b110,
-    DEST_AMD  = 0b111,
+    DEST_NULL = 0x00, // 0b000
+    DEST_M    = 0x01, // 0b001
+    DEST_D    = 0x02, // 0b010
+    DEST_MD   = 0x03, // 0b011
+    DEST_A    = 0x04, // 0b100
+    DEST_AM   = 0x05, // 0b101
+    DEST_AD   = 0x06, // 0b110
+    DEST_AMD  = 0x07, // 0b111
     DEST_PARSE_ERROR,
 };
 
